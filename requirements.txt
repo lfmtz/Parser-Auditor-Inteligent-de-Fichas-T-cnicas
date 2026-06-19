@@ -1,0 +1,8 @@
+streamlit
+python-dotenv
+pymupdf
+pymupdf4llm
+pandas
+google-genai
+openpyxl
+requests
