@@ -1,0 +1,6 @@
+.env
+temp_*
+__pycache__/
+*.pdf
+*.xlsx
+*.md
