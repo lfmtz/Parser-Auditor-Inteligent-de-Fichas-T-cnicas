@@ -109,6 +109,22 @@ def clean_markdown_tables(markdown_text: str) -> str:
     return '\n'.join(cleaned_lines)
 
 
+def make_headers_unique(headers: list) -> list:
+    seen = {}
+    unique_headers = []
+    for h in headers:
+        h_str = str(h or "").strip().replace('\n', ' ')
+        if not h_str:
+            h_str = "Columna"
+        if h_str in seen:
+            seen[h_str] += 1
+            unique_headers.append(f"{h_str}_{seen[h_str]}")
+        else:
+            seen[h_str] = 0
+            unique_headers.append(h_str)
+    return unique_headers
+
+
 def extract_pandas_tables(pdf_path: str, pages: list) -> list:
     """
     Extrae tablas de un PDF usando PyMuPDF y las retorna como lista de DataFrames limpios.
@@ -134,6 +150,9 @@ def extract_pandas_tables(pdf_path: str, pages: list) -> list:
                         headers.append(f"Versión {c_idx}")
                     else:
                         headers.append(h_str)
+                
+                # Asegurar cabeceras únicas para evitar ValueError: Duplicate column names found
+                headers = make_headers_unique(headers)
                 
                 # Normalizar filas
                 rows = []
