@@ -125,6 +125,29 @@ def make_headers_unique(headers: list) -> list:
     return unique_headers
 
 
+def is_multilevel_header(raw_data: list) -> bool:
+    if len(raw_data) < 3:
+        return False
+    row0 = raw_data[0]
+    row1 = raw_data[1]
+    
+    # Verificar si hay celdas vacías en row0 (excluyendo la primera columna)
+    has_empty_in_row0 = any(not str(cell).strip() for cell in row0[1:] if cell is not None)
+    
+    # Verificar si los elementos de row1[1:] son cortos y no vacíos
+    row1_non_empty = [str(cell).strip() for cell in row1[1:] if cell is not None]
+    if not row1_non_empty:
+        return False
+        
+    all_short_and_filled = all(len(cell) > 0 and len(cell) <= 15 for cell in row1_non_empty)
+    
+    # Palabras clave comunes para transmisiones o versiones secundarias
+    sub_keywords = {"tm", "cvt", "mt", "at", "manual", "automática", "auto", "std", "opc", "opt", "base", "turbo", "4x2", "4x4", "2wd", "4wd"}
+    has_sub_keywords = any(any(kw in cell.lower() for kw in sub_keywords) for cell in row1_non_empty)
+    
+    return has_empty_in_row0 and (all_short_and_filled or has_sub_keywords)
+
+
 def extract_pandas_tables(pdf_path: str, pages: list) -> list:
     """
     Extrae tablas de un PDF usando PyMuPDF y las retorna como lista de DataFrames limpios.
@@ -140,23 +163,60 @@ def extract_pandas_tables(pdf_path: str, pages: list) -> list:
                 if not raw_data or len(raw_data) < 2:
                     continue
                 
-                # Crear DataFrame y limpiar cabeceras
                 headers = []
-                for c_idx, h in enumerate(raw_data[0]):
-                    h_str = str(h or "").strip().replace('\n', ' ')
-                    if c_idx == 0 and not h_str:
-                        headers.append("Especificación")
-                    elif not h_str:
-                        headers.append(f"Versión {c_idx}")
-                    else:
-                        headers.append(h_str)
+                data_start_row = 1
+                
+                # Detectar y combinar cabeceras multinivel (ej: SENSE en fila 0, TM y CVT en fila 1)
+                if is_multilevel_header(raw_data):
+                    # Propagar nombres de padres de izquierda a derecha (rellenar celdas combinadas vacías)
+                    parent_headers = []
+                    current_parent = ""
+                    for cell in raw_data[0]:
+                        c_str = str(cell or "").strip().replace('\n', ' ')
+                        if c_str:
+                            current_parent = c_str
+                        parent_headers.append(current_parent)
+                        
+                    # Combinar con las subcabeceras de la fila 1
+                    for c_idx, child in enumerate(raw_data[1]):
+                        child_str = str(child or "").strip().replace('\n', ' ')
+                        parent_str = parent_headers[c_idx] if c_idx < len(parent_headers) else ""
+                        
+                        if c_idx == 0:
+                            headers.append(child_str if child_str else (parent_str if parent_str else "Especificación"))
+                        else:
+                            if parent_str and child_str:
+                                if parent_str.lower() in child_str.lower():
+                                    headers.append(child_str)
+                                elif child_str.lower() in parent_str.lower():
+                                    headers.append(parent_str)
+                                else:
+                                    headers.append(f"{parent_str} {child_str}")
+                            elif parent_str:
+                                headers.append(parent_str)
+                            elif child_str:
+                                headers.append(child_str)
+                            else:
+                                headers.append(f"Versión {c_idx}")
+                    data_start_row = 2
+                else:
+                    # Cabeceras de una sola fila
+                    for c_idx, h in enumerate(raw_data[0]):
+                        h_str = str(h or "").strip().replace('\n', ' ')
+                        if c_idx == 0 and not h_str:
+                            headers.append("Especificación")
+                        elif not h_str:
+                            headers.append(f"Versión {c_idx}")
+                        else:
+                            headers.append(h_str)
+                    data_start_row = 1
                 
                 # Asegurar cabeceras únicas para evitar ValueError: Duplicate column names found
                 headers = make_headers_unique(headers)
                 
                 # Normalizar filas
                 rows = []
-                for r in raw_data[1:]:
+                for r in raw_data[data_start_row:]:
                     if len(r) < len(headers):
                         r = r + [None] * (len(headers) - len(r))
                     else:
